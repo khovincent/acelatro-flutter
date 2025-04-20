@@ -68,17 +68,39 @@ class _HomePageState extends State<HomePage>
             ),
 
             // — Notification —
+            // — Notification —
             if (gameState.notification.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  gameState.notification,
-                  style: TextStyle(
+              Container(
+                padding: const EdgeInsets.all(8.0),
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
                     color: gameState.notification.contains('earned')
                         ? Colors.green
-                        : Colors.red,
-                    fontWeight: FontWeight.bold,
+                        : (gameState.notification.contains('⚠️')
+                            ? Colors.red.shade300
+                            : Colors.grey.shade300),
+                    width: 1,
                   ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: gameState.notification.split('\n').map((line) {
+                    Color textColor = Colors.black;
+                    if (line.contains('earned')) textColor = Colors.green;
+                    if (line.contains('⚠️')) textColor = Colors.red;
+                    if (line.contains('🤖')) textColor = Colors.blue;
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text(
+                        line,
+                        style: TextStyle(color: textColor),
+                      ),
+                    );
+                  }).toList(),
                 ),
               ),
 

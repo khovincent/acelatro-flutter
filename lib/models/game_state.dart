@@ -3,6 +3,7 @@ import 'card_model.dart';
 import 'combo_definitions.dart';
 import '../kbs/frame.dart';
 import '../kbs/rule_base.dart';
+import '../kbs/strategic_algorithms.dart';
 
 enum GameMode { demo, live }
 
@@ -20,6 +21,11 @@ class GameState {
   int roundNumber = 0;
   final int maxHandSize = 8;
   String notification = '';
+  int get movesSoFar => playedCards.length + discardedCards.length;
+
+  // KBS specific properties
+  final List<String> _kbsLog = [];
+  Map<String, dynamic>? _latestRecommendation;
 
   GameState() {
     startRound();
@@ -32,8 +38,13 @@ class GameState {
     playedCards.clear();
     discardedCards.clear();
     hand.clear();
+    _kbsLog.clear();
+    _latestRecommendation = null;
     _initializeDeck();
     _dealInitialHand();
+
+    // Initial KBS evaluation on round start
+    runKbsEvaluation();
   }
 
   /// Inisialisasi dan shuffle deck
@@ -59,6 +70,33 @@ class GameState {
   void dealCard() {
     if (deck.isNotEmpty) {
       hand.add(deck.removeLast());
+    }
+  }
+
+  /// Run the knowledge-based system evaluation
+  void runKbsEvaluation() {
+    // Create frame for current game state
+    final gameStateFrame = GameStateFrame(this);
+
+    // Run rules engine
+    final engine =
+        InferenceEngine(BalatroRuleSet.getDefaultRules(), gameStateFrame);
+    engine.forwardChain();
+
+    // Log activations
+    _kbsLog.addAll(engine.activationHistory);
+
+    // Get strategic recommendation
+    _latestRecommendation = getStrategyRecommendation();
+
+    // Add recommendation to notification
+    final action =
+        _latestRecommendation!['action'] == 'play' ? 'Play' : 'Discard';
+    final cards = _latestRecommendation!['cards'].join(', ');
+
+    if (cards.isNotEmpty) {
+      notification += '\n🤖 KBS Recommends: $action $cards';
+      notification += '\n💭 Reasoning: ${_latestRecommendation!['reason']}';
     }
   }
 
@@ -137,10 +175,8 @@ class GameState {
     currentPoints += combo.score;
     notification = 'Played ${combo.name} and earned ${combo.score} points!';
 
-    // ⬇️ FIRE RULES
-    final wm = GameStateFrame(this);
-    final engine = InferenceEngine(rules, wm);
-    engine.forwardChain();
+    // Run KBS after move
+    runKbsEvaluation();
 
     return combo;
   }
@@ -168,37 +204,9 @@ class GameState {
 
     notification = 'Discarded ${selectedCards.length} cards.';
 
-    // ⬇️ FIRE RULES
-    final wm = GameStateFrame(this);
-    final engine = InferenceEngine(rules, wm);
-    engine.forwardChain();
+    // Run KBS after move
+    runKbsEvaluation();
   }
-
-  final List<Rule> rules = [
-    Rule(
-      name: 'High Risk Strategy',
-      condition: (wm) {
-        final gs = (wm as GameStateFrame).gs;
-        return gs.requiredPoints - gs.currentPoints <= 50;
-      },
-      action: (wm) {
-        final gs = (wm as GameStateFrame).gs;
-        gs.notification += '\n🔥 Strategy: High-Risk Activated!';
-      },
-    ),
-    Rule(
-      name: 'Suggest Discard',
-      condition: (wm) {
-        final gs = (wm as GameStateFrame).gs;
-        return gs.hand.length >= 6 &&
-            gs.analyzeHand().every((combo) => combo.score < 100);
-      },
-      action: (wm) {
-        final gs = (wm as GameStateFrame).gs;
-        gs.notification += '\n💡 Suggestion: Consider discarding weak hand.';
-      },
-    ),
-  ];
 
   void sortHandByRank() {
     hand.sort((a, b) => a.value.compareTo(b.value));
@@ -232,6 +240,8 @@ class GameState {
     if (hand.length < maxHandSize) {
       hand.add(card);
       notification = 'Card ${card.shortName} added to hand.';
+      // Run KBS after adding card
+      runKbsEvaluation();
     } else {
       notification = 'Cannot add more than $maxHandSize cards.';
     }
@@ -245,5 +255,20 @@ class GameState {
       }
     }
     return cards;
+  }
+
+  /// Get KBS log for debugging
+  List<String> get kbsLog => List.unmodifiable(_kbsLog);
+
+  /// Get latest recommendation
+  Map<String, dynamic>? get latestRecommendation => _latestRecommendation;
+
+  /// Convenience method to automatically select recommended cards
+  List<int> selectRecommendedCards() {
+    if (_latestRecommendation != null &&
+        _latestRecommendation!['cardIndices'].isNotEmpty) {
+      return List<int>.from(_latestRecommendation!['cardIndices']);
+    }
+    return [];
   }
 }
