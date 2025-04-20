@@ -68,7 +68,6 @@ class _HomePageState extends State<HomePage>
             ),
 
             // — Notification —
-            // — Notification —
             if (gameState.notification.isNotEmpty)
               Container(
                 padding: const EdgeInsets.all(8.0),
@@ -95,6 +94,33 @@ class _HomePageState extends State<HomePage>
 
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text(
+                        line,
+                        style: TextStyle(color: textColor),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+
+            // — KBS Reasoning Log —
+            if (gameState.getExplanationLog().isNotEmpty)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: ExpansionTile(
+                  title: const Text('🧠 System Reasoning'),
+                  initiallyExpanded: false,
+                  tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+                  children: gameState.getExplanationLog().map((line) {
+                    Color textColor = Colors.black;
+                    if (line.contains('🔥')) textColor = Colors.deepOrange;
+                    if (line.contains('💭')) textColor = Colors.indigo;
+                    if (line.contains('🃏')) textColor = Colors.purple;
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 2, horizontal: 12),
                       child: Text(
                         line,
                         style: TextStyle(color: textColor),

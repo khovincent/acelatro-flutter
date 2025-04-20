@@ -1,108 +1,116 @@
+// lib/kbs/frame.dart
+
 import '../models/game_state.dart';
 import '../models/card_model.dart';
 import '../models/combo_definitions.dart';
 
+/// A generic Frame interface for the KBS working memory.
 abstract class Frame {
   String get name;
+
+  /// A mutable slot‐map where rules can both read and write.
   Map<String, dynamic> get slots;
 }
 
-/// Frame for GameState
+/// Frame wrapping the entire game state
 class GameStateFrame implements Frame {
   final GameState gs;
-  GameStateFrame(this.gs);
+
+  /// We keep a mutable slots map separate from the GameState itself.
+  @override
+  final Map<String, dynamic> slots = {};
+
+  GameStateFrame(this.gs) {
+    // initialize slots from current game state
+    slots.addAll({
+      'roundNumber': gs.roundNumber,
+      'currentPoints': gs.currentPoints,
+      'requiredPoints': gs.requiredPoints,
+      'pointsGap': gs.requiredPoints - gs.currentPoints,
+      'deckSize': gs.deck.length,
+      'handSize': gs.hand.length,
+      'playedCount': gs.playedCards.length,
+      'discardedCount': gs.discardedCards.length,
+      'movesSoFar': gs.playedCards.length + gs.discardedCards.length,
+      // leave space for:
+      //   'detectedCombos': List<ComboResult>
+      //   'decision': String e.g. 'play:strong combo'
+      //   'recommendedCardIndices': List<int>
+    });
+  }
 
   @override
   String get name => 'GameState';
-
-  @override
-  Map<String, dynamic> get slots => {
-        'roundNumber': gs.roundNumber,
-        'currentPoints': gs.currentPoints,
-        'requiredPoints': gs.requiredPoints,
-        'pointsGap': gs.requiredPoints - gs.currentPoints,
-        'deckSize': gs.deck.length,
-        'handSize': gs.hand.length,
-        'playedCount': gs.playedCards.length,
-        'discardedCount': gs.discardedCards.length,
-        'handsRemaining':
-            4 - gs.playedCards.length ~/ 5, // Assuming max 5 cards per hand
-        'discardsRemaining': 4 -
-            gs.discardedCards.length ~/ 5, // Assuming max 5 cards per discard
-        'movesSoFar': gs.playedCards.length + gs.discardedCards.length,
-        'averagePointsNeeded': (gs.requiredPoints - gs.currentPoints) /
-            (4 - gs.playedCards.length ~/ 5).clamp(1, 4),
-      };
 }
 
-/// Frame for a Card
+/// Frame for an individual card
 class CardFrame implements Frame {
   final CardModel card;
-  CardFrame(this.card);
+  @override
+  final Map<String, dynamic> slots = {};
+
+  CardFrame(this.card) {
+    slots.addAll({
+      'suit': card.suit,
+      'value': card.value,
+      'color': card.color,
+      'chipValue': card.chipValue,
+      'isRed': card.color == 'red',
+      'isFaceCard': card.value >= 11 && card.value <= 13,
+      'isAce': card.value == 14,
+      'shortName': card.shortName,
+    });
+  }
 
   @override
   String get name => 'Card';
-
-  @override
-  Map<String, dynamic> get slots => {
-        'suit': card.suit,
-        'value': card.value,
-        'color': card.color,
-        'chipValue': card.chipValue,
-        'isRed': card.color == 'red',
-        'isFaceCard': card.value >= 11 && card.value <= 13,
-        'isAce': card.value == 14,
-        'shortName': card.shortName,
-      };
 }
 
-/// Frame for a Combo
+/// Frame for a detected combo
 class ComboFrame implements Frame {
   final ComboResult combo;
-  ComboFrame(this.combo);
+  @override
+  final Map<String, dynamic> slots = {};
+
+  ComboFrame(this.combo) {
+    slots.addAll({
+      'comboName': combo.name,
+      'score': combo.score,
+      'cardCount': combo.cards.length,
+      'cardValues': combo.cards.map((c) => c.value).toList(),
+      'suits': combo.cards.map((c) => c.suit).toSet().toList(),
+      'totalChipValue': combo.cards.fold<int>(0, (sum, c) => sum + c.chipValue),
+    });
+  }
 
   @override
   String get name => 'Combo';
-
-  @override
-  Map<String, dynamic> get slots => {
-        'comboName': combo.name,
-        'score': combo.score,
-        'cardCount': combo.cards.length,
-        'cardValues': combo.cards.map((c) => c.value).toList(),
-        'suits': combo.cards.map((c) => c.suit).toSet().toList(),
-        'uniqueValues': combo.cards.map((c) => c.value).toSet().length,
-        'uniqueSuits': combo.cards.map((c) => c.suit).toSet().length,
-        'totalChipValue':
-            combo.cards.fold<int>(0, (sum, c) => sum + c.chipValue),
-        'averageCardValue':
-            combo.cards.fold<int>(0, (sum, c) => sum + c.value) /
-                combo.cards.length,
-      };
 }
 
-/// Frame for Strategy Recommendation
+/// Frame for a strategic recommendation (for explainability)
 class StrategyFrame implements Frame {
   final String strategyType;
-  final double riskLevel; // 0.0 to 1.0
+  final double riskLevel; // 0.0 .. 1.0
   final String description;
   final List<String> recommendations;
+
+  @override
+  final Map<String, dynamic> slots = {};
 
   StrategyFrame({
     required this.strategyType,
     required this.riskLevel,
     required this.description,
     required this.recommendations,
-  });
+  }) {
+    slots.addAll({
+      'strategyType': strategyType,
+      'riskLevel': riskLevel,
+      'description': description,
+      'recommendations': recommendations,
+    });
+  }
 
   @override
   String get name => 'Strategy';
-
-  @override
-  Map<String, dynamic> get slots => {
-        'strategyType': strategyType,
-        'riskLevel': riskLevel,
-        'description': description,
-        'recommendations': recommendations,
-      };
 }

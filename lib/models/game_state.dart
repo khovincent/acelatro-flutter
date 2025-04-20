@@ -1,16 +1,21 @@
+// lib/models/game_state.dart
+
 import 'dart:math';
 import 'card_model.dart';
 import 'combo_definitions.dart';
+
 import '../kbs/frame.dart';
 import '../kbs/rule_base.dart';
-import '../kbs/strategic_algorithms.dart';
+import '../kbs/combo_rules.dart';
+import '../kbs/play_discard_rules.dart';
+import '../kbs/card_selection_rules.dart';
 
 enum GameMode { demo, live }
 
 class GameState {
   GameMode mode = GameMode.demo;
 
-  // **Frame**-based state
+  // Core game data
   List<CardModel> deck = [];
   List<CardModel> hand = [];
   List<CardModel> playedCards = [];
@@ -20,10 +25,13 @@ class GameState {
   int requiredPoints = 300;
   int roundNumber = 0;
   final int maxHandSize = 8;
+
+  /// Combined KBS notifications + user messages
   String notification = '';
+
   int get movesSoFar => playedCards.length + discardedCards.length;
 
-  // KBS specific properties
+  // For debugging / explainability
   final List<String> _kbsLog = [];
   Map<String, dynamic>? _latestRecommendation;
 
@@ -31,7 +39,7 @@ class GameState {
     startRound();
   }
 
-  /// Mulai ronde baru
+  /// Starts a new round: shuffle, deal, reset state & run initial KBS
   void startRound() {
     roundNumber++;
     currentPoints = 0;
@@ -40,17 +48,15 @@ class GameState {
     hand.clear();
     _kbsLog.clear();
     _latestRecommendation = null;
+    notification = '';
+
     _initializeDeck();
     _dealInitialHand();
-
-    // Initial KBS evaluation on round start
     runKbsEvaluation();
   }
 
-  /// Inisialisasi dan shuffle deck
   void _initializeDeck() {
     deck = [];
-    // generate 52 kartu
     for (var suit in CardModel.suitSymbols.keys) {
       for (var value in CardModel.values.keys) {
         deck.add(CardModel(suit, value));
@@ -59,51 +65,66 @@ class GameState {
     deck.shuffle(Random());
   }
 
-  /// Bagi kartu awal sebanyak [maxHandSize]
   void _dealInitialHand() {
     for (int i = 0; i < maxHandSize; i++) {
       dealCard();
     }
   }
 
-  /// Ambil 1 kartu dari deck ke tangan
   void dealCard() {
-    if (deck.isNotEmpty) {
-      hand.add(deck.removeLast());
-    }
+    if (deck.isNotEmpty) hand.add(deck.removeLast());
   }
 
-  /// Run the knowledge-based system evaluation
+  /// **Central KBS invocation** — builds WM, runs all rules, logs + notifies
   void runKbsEvaluation() {
-    // Create frame for current game state
-    final gameStateFrame = GameStateFrame(this);
+    // 1. Build working memory
+    final wm = GameStateFrame(this);
 
-    // Run rules engine
-    final engine =
-        InferenceEngine(BalatroRuleSet.getDefaultRules(), gameStateFrame);
+    // 2. Instantiate inference engine with all rule sets
+    final engine = InferenceEngine(
+      [
+        ...BalatroRuleSet.getDefaultRules(),
+        ...ComboDetectionEngine.getComboRules(),
+        ...PlayDiscardRules.getRules(),
+        ...CardSelectionRules.getRules(),
+      ],
+      wm,
+    );
+
+    // 3. Fire forward chains
     engine.forwardChain();
 
-    // Log activations
+    // 4. Record what fired
     _kbsLog.addAll(engine.activationHistory);
 
-    // Get strategic recommendation
-    _latestRecommendation = getStrategyRecommendation();
+    // 5. Extract decision + indices + build recommendation
+    final decision = (wm.slots['decision'] as String?) ?? 'play:fallback';
+    final action = decision.startsWith('play') ? 'Play' : 'Discard';
+    final indices =
+        List<int>.from(wm.slots['recommendedCardIndices'] as List<int>? ?? []);
+    final cardNames = indices.map((i) => hand[i].shortName).join(', ');
+    final reason = decision.contains(':') ? decision.split(':')[1] : decision;
 
-    // Add recommendation to notification
-    final action =
-        _latestRecommendation!['action'] == 'play' ? 'Play' : 'Discard';
-    final cards = _latestRecommendation!['cards'].join(', ');
+    // 6. Store for external inspection (if needed)
+    _latestRecommendation = {
+      'action': action.toLowerCase(), // 'play' or 'discard'
+      'cardIndices': indices, // List<int>
+      'cards': cardNames.split(', '), // List<String>
+      'reason': reason, // String
+      'firedRules': engine.activationHistory, // List<String>
+      'detectedCombos': wm.slots['detectedCombos'], // List<ComboResult>
+    };
 
-    if (cards.isNotEmpty) {
-      notification += '\n🤖 KBS Recommends: $action $cards';
-      notification += '\n💭 Reasoning: ${_latestRecommendation!['reason']}';
+    // 7. Append to notification area
+    if (cardNames.isNotEmpty) {
+      notification +=
+          '\n🤖 KBS Recommends: $action $cardNames\n💭 Reasoning: $reason';
     }
   }
 
+  /// Analyze hand for all combos (unchanged)
   List<ComboResult> analyzeHand() {
     var results = <ComboResult>[];
-
-    // Cek tiap definisi combo
     for (var def in comboDefinitions) {
       if (hand.length < def.cardCount) continue;
       for (var combo in combinations(hand, def.cardCount)) {
@@ -114,32 +135,27 @@ class GameState {
         }
       }
     }
-
-    // Tambahkan High Card sebagai fallback
+    // High Card fallback
     if (hand.isNotEmpty) {
       var maxCard = hand.reduce((a, b) => a.value > b.value ? a : b);
       var score = (5 + maxCard.chipValue) * 1;
       results.add(ComboResult('High Card', [maxCard], score));
     }
-
-    // Hilangkan duplikat (berdasarkan set nilai & nama), kemudian sort
-    var seen = <String>{};
-    var unique = <ComboResult>[];
+    // Dedupe & sort
+    final seen = <String>{};
+    final unique = <ComboResult>[];
     for (var r in results) {
-      var key = '${r.name}-${r.cards.map((c) => c.value).join(",")}';
-      if (!seen.contains(key)) {
-        seen.add(key);
-        unique.add(r);
-      }
+      final key = '${r.name}-${r.cards.map((c) => c.value).join(",")}';
+      if (seen.add(key)) unique.add(r);
     }
     unique.sort((a, b) {
-      var cmp = b.score.compareTo(a.score);
+      final cmp = b.score.compareTo(a.score);
       return cmp != 0 ? cmp : a.name.compareTo(b.name);
     });
-
     return unique;
   }
 
+  /// Identify a combo from selected cards (unchanged)
   ComboResult identifyCombo(List<CardModel> selected) {
     for (var def in comboDefinitions) {
       if (selected.length >= def.cardCount &&
@@ -149,39 +165,37 @@ class GameState {
         return ComboResult(def.name, selected, score);
       }
     }
-    // Jika tidak match, kembalikan High Card:
+    // fallback High Card
     var mc = selected.reduce((a, b) => a.value > b.value ? a : b);
     return ComboResult('High Card', [mc], (5 + mc.chipValue) * 1);
   }
 
-  /// Identifikasi & mainkan combo, update points & notification
+  /// Play the selected combo, update points + re-run KBS
   ComboResult playCombo(List<int> indices) {
     if (indices.isEmpty) {
       notification = 'No cards selected to play!';
       return ComboResult('None', [], 0);
     }
-    var selectedCards = indices.map((i) => hand[i]).toList();
-    var combo = identifyCombo(selectedCards);
+    var selected = indices.map((i) => hand[i]).toList();
+    var combo = identifyCombo(selected);
 
+    // Remove from hand (descending to keep indices valid)
     indices.toSet().toList()
       ..sort((a, b) => b.compareTo(a))
       ..forEach(hand.removeAt);
-    playedCards.addAll(selectedCards);
+    playedCards.addAll(selected);
 
-    while (hand.length < maxHandSize) {
-      dealCard();
-    }
+    // Refill to maxHandSize
+    while (hand.length < maxHandSize) dealCard();
 
     currentPoints += combo.score;
     notification = 'Played ${combo.name} and earned ${combo.score} points!';
 
-    // Run KBS after move
     runKbsEvaluation();
-
     return combo;
   }
 
-  /// Buang kartu, tanpa scoring
+  /// Discard selected cards, draw fresh + re-run KBS
   void discard(List<int> indices) {
     if (indices.isEmpty) {
       notification = 'No cards selected to discard!';
@@ -191,20 +205,15 @@ class GameState {
       notification = 'Cannot discard all cards—must keep at least one.';
       return;
     }
-
-    var selectedCards = indices.map((i) => hand[i]).toList();
+    var selected = indices.map((i) => hand[i]).toList();
     indices.toSet().toList()
       ..sort((a, b) => b.compareTo(a))
       ..forEach(hand.removeAt);
-    discardedCards.addAll(selectedCards);
+    discardedCards.addAll(selected);
 
-    while (hand.length < maxHandSize) {
-      dealCard();
-    }
+    while (hand.length < maxHandSize) dealCard();
 
-    notification = 'Discarded ${selectedCards.length} cards.';
-
-    // Run KBS after move
+    notification = 'Discarded ${selected.length} cards.';
     runKbsEvaluation();
   }
 
@@ -214,24 +223,24 @@ class GameState {
   }
 
   void sortHandBySuit() {
-    hand.sort((a, b) {
-      int suitOrder(String suit) {
-        switch (suit) {
-          case 'Spades':
-            return 0;
-          case 'Hearts':
-            return 1;
-          case 'Diamonds':
-            return 2;
-          case 'Clubs':
-            return 3;
-          default:
-            return 4;
-        }
+    int suitOrder(String s) {
+      switch (s) {
+        case 'Spades':
+          return 0;
+        case 'Hearts':
+          return 1;
+        case 'Diamonds':
+          return 2;
+        case 'Clubs':
+          return 3;
+        default:
+          return 4;
       }
+    }
 
-      int suitCompare = suitOrder(a.suit).compareTo(suitOrder(b.suit));
-      return suitCompare != 0 ? suitCompare : a.value.compareTo(b.value);
+    hand.sort((a, b) {
+      final cmp = suitOrder(a.suit).compareTo(suitOrder(b.suit));
+      return cmp != 0 ? cmp : a.value.compareTo(b.value);
     });
     notification = 'Hand sorted by suit.';
   }
@@ -240,7 +249,6 @@ class GameState {
     if (hand.length < maxHandSize) {
       hand.add(card);
       notification = 'Card ${card.shortName} added to hand.';
-      // Run KBS after adding card
       runKbsEvaluation();
     } else {
       notification = 'Cannot add more than $maxHandSize cards.';
@@ -257,18 +265,47 @@ class GameState {
     return cards;
   }
 
-  /// Get KBS log for debugging
+  /// Expose for debugging
   List<String> get kbsLog => List.unmodifiable(_kbsLog);
 
-  /// Get latest recommendation
+  /// Latest recommendation summary
   Map<String, dynamic>? get latestRecommendation => _latestRecommendation;
 
-  /// Convenience method to automatically select recommended cards
+  /// Convenience: list of indices from last KBS run
   List<int> selectRecommendedCards() {
-    if (_latestRecommendation != null &&
-        _latestRecommendation!['cardIndices'].isNotEmpty) {
-      return List<int>.from(_latestRecommendation!['cardIndices']);
+    return List<int>.from(_latestRecommendation?['cardIndices'] ?? []);
+  }
+
+  /// Returns a list of strings explaining what the KBS decided and why
+  List<String> getExplanationLog() {
+    final log = <String>[];
+
+    if (_latestRecommendation != null) {
+      log.add('🤖 Decision: ${_latestRecommendation!['action'].toUpperCase()}');
+      log.add('💭 Reason: ${_latestRecommendation!['reason']}');
+
+      if (_latestRecommendation!['detectedCombos'] != null) {
+        final combos =
+            _latestRecommendation!['detectedCombos'] as List<ComboResult>;
+        if (combos.isNotEmpty) {
+          log.add('🃏 Detected Combos:');
+          for (var combo in combos.take(3)) {
+            log.add('• ${combo.name} (${combo.score} pts)');
+          }
+        }
+      }
+
+      if (_latestRecommendation!['firedRules'] != null) {
+        final rules = _latestRecommendation!['firedRules'] as List<String>;
+        log.add('🔥 Rules Fired:');
+        for (var rule in rules) {
+          log.add('• $rule');
+        }
+      }
+    } else {
+      log.add('No reasoning available yet.');
     }
-    return [];
+
+    return log;
   }
 }
