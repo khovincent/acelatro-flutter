@@ -26,7 +26,7 @@ Widget _buildPipColumn(List<Widget> pips) {
 // Logic for arranging pips in the center
 Widget _buildCentralSymbolArea(CardModel card, bool isFaded) {
   final count = card.centralDisplaySymbolCount;
-  const double smallPipSize = 7.5; // You might need to adjust this based on card size
+  const double smallPipSize = 15.5; // You might need to adjust this based on card size
   const double largePipSize = 18.0;
 
   if (count == 1) { // Ace, J, Q, K
