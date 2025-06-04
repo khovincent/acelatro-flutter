@@ -1,0 +1,6 @@
+Explanation:
+Phase: All rules belong to InferencePhase.decision.
+Priorities: Rules are carefully prioritized. Winning plays > Urgent plays > Strong plays > Late game plays > Weak hand discards > Conservative discards > Fallback plays > Fallback discards.
+Reads: These rules read the output of previous phases (detectedCombos, strategicAdvice) as well as core game state (pointsGap, remainingDiscards, remainingHands). Crucially, fallback rules also read currentDecision to ensure they only fire if no higher-priority rule has already made a decision.
+Writes: All rules write to the single GameStateFrame.currentDecision slot. The value is a string formatted as "action:reason" (e.g., "play:strong_combo_flush", "discard:improve_weak_hand"). This allows the next phase (selection) and the GameState result extraction to know both what to do and why.
+Logic: The conditions combine strategic advice, combo strength (score thresholds), game state (discards/hands left), and goal proximity (pointsGap).

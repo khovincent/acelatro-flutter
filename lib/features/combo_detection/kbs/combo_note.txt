@@ -1,0 +1,21 @@
+Explanation:
+Imports: Includes necessary frame, rule, model, and utility definitions.
+getRules(): A static method to provide the list of rules.
+Looping Definitions: It iterates through balatroComboDefinitions (defined in combo_definitions.dart).
+Rule Creation: For each definition (except 'High Card'), it creates a Rule instance.
+name, description, tags: Set for clarity and potential filtering.
+phase: Set to InferencePhase.detection.
+priority: Calculated based on the order in balatroComboDefinitions. Higher-ranked poker hands get higher priority values.
+reads: Declares that the rule needs GameStateFrame.handCards.
+writes: Declares that the rule will modify GameStateFrame.detectedCombos.
+condition: Checks if the WM is a GameStateFrame and if there are enough cards in the hand (handCards slot) to potentially form the combo defined by requiredCardCount. (Simplified to just check card count).
+action:
+Gets the hand from the handCards slot.
+Ensures the detectedCombos slot exists as a List<ComboResult>.
+Uses the combinations utility to get all subsets of the hand matching the requiredCardCount.
+Iterates through these combinations.
+If a combination satisfies the definition.check function:
+Calculates the score using definition.calculateScore.
+Creates a ComboResult.
+Adds the ComboResult to the detectedCombos list in the working memory slot.
+Sorting Rule: An extra rule is added with low priority (0) to run at the end of the detection phase, sorting the detectedCombos list by score.

@@ -1,0 +1,34 @@
+lib/
+├── core/
+│   ├── kbs/
+│   │   ├── frames/
+│   │   │   ├── frame.dart              # Abstract Frame definition
+│   │   │   └── game_state_frame.dart   # Concrete WM Frame for GameState
+│   │   ├── rules/
+│   │   │   ├── rule_base.dart          # Rule, Phase, ConflictResolver etc.
+│   │   │   └── rule_registry.dart      # Singleton Rule Registry
+│   │   └── inference_engine.dart       # The Inference Engine itself
+│   ├── models/
+│   │   ├── card_model.dart           # Card data model
+│   │   ├── combo_definitions.dart    # Combo data & check logic
+│   │   └── game_state.dart           # Holds the actual game state (We are here)
+│   └── utils/                      # Optional: For helpers like combinations
+│       └── combinations_util.dart    # (If you move combinations helper here)
+├── features/                       # (Will add later for specific rules)
+│   ├── combo_detection/
+│   │   └── kbs/
+│   │       └── combo_rules.dart
+│   ├── strategy/
+│   │   └── kbs/
+│   │       └── strategy_rules.dart
+│   ├── decision/
+│   │   └── kbs/
+│   │       └── decision_rules.dart
+│   ├── selection/
+│   │   └── kbs/
+│   │       ├── selection_rules.dart
+│   │       └── probability_estimators.dart
+├── ui/                             # (Will add later for UI)
+│   ├── widgets/
+│   └── screens/
+└── main.dart                       # Application entry point

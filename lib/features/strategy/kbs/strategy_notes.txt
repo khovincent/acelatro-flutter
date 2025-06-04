@@ -1,0 +1,9 @@
+Explanation:
+Purpose: These rules don't make the final play/discard decision but provide context.
+Phase: All rules are in InferencePhase.strategy.
+Reads: They read slots like movesLeft, pointsGap, and the detectedCombos list (populated by the previous phase).
+Writes:
+They primarily write to the notification slot to give feedback to the user.
+They also write to a strategicAdvice slot. This is a simple example using a string flag (e.g., 'high_risk_needed', 'focus_building'). A more complex system might use a dedicated StrategyFrame or a list of active strategies. The decision phase rules can later read this strategicAdvice slot.
+Priorities: Priorities are set to group related rules (like phase assessment) and ensure important facts (like Target Already Reached) are potentially stated with high priority.
+Logic: The conditions implement simple heuristics based on moves left, the points gap, and the score of the best detected combo.
